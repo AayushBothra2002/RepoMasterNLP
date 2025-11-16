@@ -751,7 +751,7 @@ class CodeExplorerTools:
 
     def _prepare_documents(self, docs):
         """Convert docs to Langchain Documents."""
-        from langchain.schema import Document
+        from langchain_core.documents import Document
         if isinstance(docs[0], dict):
             return [
                 Document(

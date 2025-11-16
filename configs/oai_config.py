@@ -4,10 +4,12 @@ import warnings
 # Default provider priority order
 DEFAULT_PROVIDER_PRIORITY = [
     'openai',
-    'claude', 
+    'claude'
+    'gemini', 
     'deepseek',
     'basic',
-    'azure_openai'
+    'azure_openai',
+    'local_llama'
 ]
 
 def get_api_config():
@@ -23,7 +25,8 @@ def get_api_config():
             "config_list": [{
                 "model": os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
                 "api_key": os.environ.get("ANTHROPIC_API_KEY"),
-                "base_url": os.environ.get("ANTHROPIC_BASE_URL")
+                "base_url": os.environ.get("ANTHROPIC_BASE_URL"),
+                "api_type": "anthropic",
             }]
         },
         'deepseek': {
@@ -35,9 +38,10 @@ def get_api_config():
         },
         'basic': {
             "config_list": [{
-                "model": os.environ.get("OPENAI_MODEL", "gpt-4o"),
-                "api_key": os.environ.get("OPENAI_API_KEY"),
-                "base_url": os.environ.get("OPENAI_BASE_URL")
+                "model": os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+                "api_key": os.environ.get("ANTHROPIC_API_KEY"),
+                "base_url": os.environ.get("ANTHROPIC_BASE_URL"),
+                "api_type": "anthropic"
             }]
         },
         'azure_openai': {
@@ -62,13 +66,31 @@ def get_api_config():
                 "api_key": os.environ.get("CLAUDE_API_KEY"),
                 "base_url": os.environ.get("CLAUDE_BASE_URL"),
             }],
-        }
+        },
+        'gemini': {
+            "config_list": [{
+                "model": os.environ.get("GEMINI_MODEL", "gemini-pro"),
+                "api_key": os.environ.get("GEMINI_API_KEY"),
+                "api_type": "google",  
+                "base_url": os.environ.get("GEMINI_BASE_URL") 
+            }]
+        },
+        'local_llama': {
+            "config_list": [{
+                "model": os.environ.get("LOCAL_LLAMA_MODEL", "llama3.2:3b"),
+                "api_key": os.environ.get("LOCAL_LLAMA_API_KEY", "ollama"),  # dummy
+                "base_url": os.environ.get("LOCAL_LLAMA_BASE_URL", "http://localhost:11434/v1"),
+                "api_type": "openai",  # treat it like OpenAI-compatible
+            }]
+        },
     }
 
+provider = os.environ.get("DEFAULT_API_PROVIDER", "openai")
+
 service_config = {
-    "summary": get_api_config()["basic"],
-    "deepsearch": get_api_config()["basic"],
-    "code_explore": get_api_config()["basic"],
+    "summary": get_api_config()[provider],
+    "deepsearch": get_api_config()[provider],
+    "code_explore": get_api_config()[provider],
 }
 
 

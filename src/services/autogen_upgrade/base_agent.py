@@ -65,11 +65,34 @@ class BasicConversableAgent(ConversableAgent):
         super().__init__(*args, **kwargs)
 
     def _generate_oai_reply_from_client(self, llm_client, messages, cache) -> Optional[Union[str, dict[str, Any]]]:
+        # Determine if this is a Google Gemini client
+        is_gemini = False
+        if llm_client and hasattr(llm_client, "config_list"):
+            if llm_client.config_list and llm_client.config_list[0].get("api_type") == "google":
+                is_gemini = True
+
         # unroll tool_responses
         all_messages = []
         for message in messages:
+            # --- START OF GEMINI FIX ---
+            if is_gemini:
+                # 1. Handle None content for system messages
+                if message.get("role") == "system" and message.get("content") is None:
+                    message = message.copy()
+                    message["content"] = ""  # Change None to "" to prevent .strip() error
+                
+                # 2. Convert 'function' or 'tool' roles to 'user' role for Gemini
+                if message.get("role") == "function" or message.get("role") == "tool":
+                    message = message.copy()
+                    message["role"] = "user"
+            # --- END OF GEMINI FIX ---
             tool_responses = message.get("tool_responses", [])
             if tool_responses:
+                # Also fix the role inside tool_responses
+                if is_gemini:
+                    for tr in tool_responses:
+                        if tr.get("role") == "function" or tr.get("role") == "tool":
+                             tr["role"] = "user"
                 all_messages += tool_responses
                 # tool role on the parent message means the content is just concatenation of all of the tool_responses
                 if message.get("role") != "tool":
@@ -354,27 +377,63 @@ class ExtendedUserProxyAgent(BasicConversableAgent, TrackableUserProxyAgent):
         
         return execute_result
     
+    # def execute_code_blocks(self, code_blocks):
+    #     """Override the code execution to handle path issues"""
+    #     # Add project root to Python path
+    #     self.set_env()
+        
+    #     # print(f"Execute code block 1: {code_blocks}")
+    #     code_blocks, shell_cmds = filter_duplicate_commands(code_blocks)
+    #     for cmd in shell_cmds:
+    #         print(f"echo {cmd} >> {self._code_execution_config['work_dir']}/run_all_cmd.sh", flush=True)
+    #         os.system(f"echo {cmd} >> {self._code_execution_config['work_dir']}/run_all_cmd.sh")
+    #     # print(f"Execute code block 2: {code_blocks}"))
+        
+    #     execute_result = super().execute_code_blocks(code_blocks)
+        
+    #     if 0:
+    #         execute_result = self.process_import_error(args={"execute_result": execute_result, "code_blocks": code_blocks})
+    #         execute_result = execute_result['execute_result']
+        
+    #     exitcode, logs_all = execute_result
+        
+    #     return exitcode, self.clean_execute_result(logs_all)
+
     def execute_code_blocks(self, code_blocks):
         """Override the code execution to handle path issues"""
         # Add project root to Python path
         self.set_env()
-        
+
+        # --- ensure work_dir and run_all_cmd.sh exist ---
+        work_dir = self._code_execution_config["work_dir"]
+        os.makedirs(work_dir, exist_ok=True)
+
+        run_all_path = os.path.join(work_dir, "run_all_cmd.sh")
+        if not os.path.exists(run_all_path):
+            with open(run_all_path, "w") as f:
+                f.write("#!/bin/bash\n\n")
+            # optional, but nice:
+            os.chmod(run_all_path, 0o755)
+
         # print(f"Execute code block 1: {code_blocks}")
         code_blocks, shell_cmds = filter_duplicate_commands(code_blocks)
         for cmd in shell_cmds:
-            print(f"echo {cmd} >> {self._code_execution_config['work_dir']}/run_all_cmd.sh", flush=True)
-            os.system(f"echo {cmd} >> {self._code_execution_config['work_dir']}/run_all_cmd.sh")
+            print(f"echo {cmd} >> {run_all_path}", flush=True)
+            os.system(f"echo {cmd} >> {run_all_path}")
         # print(f"Execute code block 2: {code_blocks}"))
-        
+
         execute_result = super().execute_code_blocks(code_blocks)
-        
+
         if 0:
-            execute_result = self.process_import_error(args={"execute_result": execute_result, "code_blocks": code_blocks})
-            execute_result = execute_result['execute_result']
-        
+            execute_result = self.process_import_error(
+                args={"execute_result": execute_result, "code_blocks": code_blocks}
+            )
+            execute_result = execute_result["execute_result"]
+
         exitcode, logs_all = execute_result
-        
+
         return exitcode, self.clean_execute_result(logs_all)
+
 
     def _generate_code_execution_reply_using_executor(
         self,
@@ -527,3 +586,10 @@ class ExtendedUserProxyAgent(BasicConversableAgent, TrackableUserProxyAgent):
             )
         
         return is_exec_success, final_result
+    
+
+# --- GLOBAL PATCH FOR GEMINI + AUTOGEN ---
+# Make all ConversableAgents (including DeepSearch's researcher/executor)
+# use the Gemini-safe implementation defined in BasicConversableAgent.
+
+ConversableAgent._generate_oai_reply_from_client = BasicConversableAgent._generate_oai_reply_from_client

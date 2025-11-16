@@ -19,7 +19,8 @@ from src.core.git_task import TaskManager, AgentRunner
 scheduler_system_message = dedent("""Role: Enhanced Task Scheduler
 
 Primary Responsibility:
-The Enhanced Task Scheduler's main duty is to analyze user input, create a structured task plan based on available tools, and then select and call appropriate tools from the given set to fulfill user requirements. The Enhanced Task Scheduler can work in four distinct modes to fulfill user requirements:
+The Enhanced Task Scheduler's main duty is to analyze user input, create a structured task plan based on available tools, 
+and then select and call appropriate tools from the given set to fulfill user requirements. The Enhanced Task Scheduler can work in four distinct modes to fulfill user requirements:
 1. **Web Search Mode**: Search the internet for real-time information, current events, or general knowledge.
 2. **Repository Mode**: Search and use GitHub repositories or local repositories to solve tasks through hierarchical repository analysis and autonomous exploration. This is the primary approach for complex coding tasks that require repository-level solutions.
 3. **General Code Assistant Mode**: Provide general programming assistance without specific repositories.
@@ -107,11 +108,23 @@ class RepoMasterAgent:
         """
         Initialize scheduler agent and user agent.
         """
+        scheduler_llm_config = self.llm_config.copy()
+        scheduler_system_msg = scheduler_system_message
+        self.gemini_system_prompt = None
+
+        # Check if the provider is Google/Gemini
+        if scheduler_llm_config.get("config_list", [{}])[0].get("api_type") == "google":
+            # If it is Google, move the system_message into the first user message
+            # and remove it from the agent's system_message, as Gemini's client
+            # (which Autogen uses) errors on system_message + tool calls.
+            self.gemini_system_prompt = scheduler_system_message
+            scheduler_system_msg = "" # Set to None for the constructor
+
         self.scheduler = ExtendedAssistantAgent(
             name="scheduler_agent",
-            system_message=scheduler_system_message,
+            system_message=scheduler_system_msg, # Use the (potentially None) variable
             is_termination_msg=lambda x: x.get("content", "") and x.get("content", "").endswith("TERMINATE"),
-            llm_config=self.llm_config,
+            llm_config=scheduler_llm_config,
         )
 
         self.user_proxy = ExtendedUserProxyAgent(
@@ -377,6 +390,11 @@ Please provide comprehensive help including code examples, explanations, and pra
         """
         # Set initial message
         initial_message = task
+
+        # Check if this is the first message AND we are using Gemini
+        is_first_message = not self.user_proxy.chat_messages.get(self.scheduler)
+        if is_first_message and hasattr(self, 'gemini_system_prompt') and self.gemini_system_prompt:
+             initial_message = self.gemini_system_prompt + "\n\nHere is the task:\n" + task
         
         # Start conversation
         chat_result = self.user_proxy.initiate_chat(
