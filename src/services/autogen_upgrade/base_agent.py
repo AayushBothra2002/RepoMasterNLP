@@ -71,34 +71,49 @@ class BasicConversableAgent(ConversableAgent):
             if llm_client.config_list and llm_client.config_list[0].get("api_type") == "google":
                 is_gemini = True
 
-        # unroll tool_responses
+        # helper for Gemini role normalization
+        def _normalize_gemini_message(msg: dict) -> dict:
+            """Return a Gemini-safe copy of msg."""
+            msg = msg.copy()
+            role = msg.get("role") or ""
+            if role == "assistant":
+                msg["role"] = "model"
+            elif role in ("function", "tool", "system", ""):
+                msg["role"] = "user"
+            elif role not in ("user", "model"):
+                msg["role"] = "user"
+            if msg.get("content") is None:
+                msg["content"] = ""
+            return msg
+
+        # NOTE: Original pre-Gemini handling (for reference only)
+        # all_messages = []
+        # for message in messages:
+        #     tool_responses = message.get("tool_responses", [])
+        #     if tool_responses:
+        #         all_messages += tool_responses
+        #         if message.get("role") != "tool":
+        #             all_messages.append({key: message[key] for key in message if key != "tool_responses"})
+        #     else:
+        #         all_messages.append(message)
+
+        # unroll tool_responses (Gemini-safe)
         all_messages = []
         for message in messages:
-            # --- START OF GEMINI FIX ---
             if is_gemini:
-                # 1. Handle None content for system messages
-                if message.get("role") == "system" and message.get("content") is None:
-                    message = message.copy()
-                    message["content"] = ""  # Change None to "" to prevent .strip() error
-                
-                # 2. Convert 'function' or 'tool' roles to 'user' role for Gemini
-                if message.get("role") == "function" or message.get("role") == "tool":
-                    message = message.copy()
-                    message["role"] = "user"
-            # --- END OF GEMINI FIX ---
+                message = _normalize_gemini_message(message)
             tool_responses = message.get("tool_responses", [])
             if tool_responses:
-                # Also fix the role inside tool_responses
                 if is_gemini:
-                    for tr in tool_responses:
-                        if tr.get("role") == "function" or tr.get("role") == "tool":
-                             tr["role"] = "user"
+                    tool_responses = [_normalize_gemini_message(tr) for tr in tool_responses]
                 all_messages += tool_responses
-                # tool role on the parent message means the content is just concatenation of all of the tool_responses
                 if message.get("role") != "tool":
                     all_messages.append({key: message[key] for key in message if key != "tool_responses"})
             else:
                 all_messages.append(message)
+
+        if is_gemini:
+            all_messages = [_normalize_gemini_message(msg) for msg in all_messages]
 
         # TODO: #1143 handle token limit exceeded error
         response = llm_client.create(

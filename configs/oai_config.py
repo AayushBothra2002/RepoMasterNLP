@@ -3,9 +3,9 @@ import warnings
 
 # Default provider priority order
 DEFAULT_PROVIDER_PRIORITY = [
+    'gemini', 
     'openai',
     'claude'
-    'gemini', 
     'deepseek',
     'basic',
     'azure_openai',
@@ -71,8 +71,8 @@ def get_api_config():
             "config_list": [{
                 "model": os.environ.get("GEMINI_MODEL", "gemini-pro"),
                 "api_key": os.environ.get("GEMINI_API_KEY"),
+                "base_url": os.environ.get("GEMINI_BASE_URL"),
                 "api_type": "google",  
-                "base_url": os.environ.get("GEMINI_BASE_URL") 
             }]
         },
         'local_llama': {
@@ -220,6 +220,11 @@ def get_llm_config(api_type: str = None, timeout: int = 240, temperature: float 
     
     # Verify config
     model = api_config.get('config_list', [{}])[0].get('model', 'N/A')
+    provider = api_config['config_list'][0].get('api_type')
+    
+    if provider in ['claude', 'anthropic']: # for claude, gives error temperature and top_p cannot both be specified
+        api_config.pop("top_p", None)
+    
     if model in ['gpt-5']:
         api_config.pop("top_p", None)  # gpt-5 does not support top_p
         if api_config["temperature"] != 1.0:

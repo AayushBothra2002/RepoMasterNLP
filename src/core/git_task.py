@@ -14,6 +14,7 @@ import asyncio
 from src.utils.utils_config import AppConfig
 from configs.oai_config import get_llm_config
 
+import shutil
 
 # ======================== Utility Classes and Functions ========================
 
@@ -62,31 +63,60 @@ class PathManager:
 class DataProcessor:
     """Data processing class for handling file copying, decompression and other operations"""
     
+    # @staticmethod
+    # def copy_dataset(data_path, target_path):
+    #     """Copy or link dataset to target path"""
+    #     if not os.path.exists(target_path):
+    #         os.makedirs(target_path, exist_ok=True)
+        
+    #     if os.path.isfile(data_path):
+    #         os.system(f"ln -s {data_path} {target_path}/")
+    #         return f"{target_path}/{Path(data_path).name}"
+        
+    #     for file in os.listdir(data_path):
+    #         source = f"{data_path}/{file}"
+    #         destination = f"{target_path}/{file}"
+            
+    #         if os.path.isdir(source):
+    #             if os.path.exists(destination):
+    #                 print(f"Target already exists, skipping: {destination}")
+    #                 continue
+    #             print(f"ln -s {source} {target_path}/")
+    #             os.system(f"ln -s {source} {target_path}/")
+    #         else:
+    #             print(f"cp -a {source} {target_path}/")
+    #             os.system(f"cp -a {source} {target_path}/")
+        
+    #     return 
+
     @staticmethod
     def copy_dataset(data_path, target_path):
-        """Copy or link dataset to target path"""
+        """Copy or link dataset to target path - Windows compatible"""
         if not os.path.exists(target_path):
             os.makedirs(target_path, exist_ok=True)
         
         if os.path.isfile(data_path):
-            os.system(f"ln -s {data_path} {target_path}/")
-            return f"{target_path}/{Path(data_path).name}"
+            # Copy file instead of symlink (Windows compatible)
+            dest_file = os.path.join(target_path, Path(data_path).name)
+            shutil.copy2(data_path, dest_file)
+            return dest_file
         
-        for file in os.listdir(data_path):
-            source = f"{data_path}/{file}"
-            destination = f"{target_path}/{file}"
+        # Copy directory
+        for item in os.listdir(data_path):
+            source = os.path.join(data_path, item)
+            destination = os.path.join(target_path, item)
             
             if os.path.isdir(source):
                 if os.path.exists(destination):
                     print(f"Target already exists, skipping: {destination}")
                     continue
-                print(f"ln -s {source} {target_path}/")
-                os.system(f"ln -s {source} {target_path}/")
+                # Use shutil instead of ln -s
+                shutil.copytree(source, destination, dirs_exist_ok=True)
             else:
-                print(f"cp -a {source} {target_path}/")
-                os.system(f"cp -a {source} {target_path}/")
+                # Use shutil instead of cp
+                shutil.copy2(source, target_path)
         
-        return 
+        return target_path
 
     @staticmethod
     def unzip_data(data_path):
@@ -111,7 +141,8 @@ class DataProcessor:
             target_repo_path = f"{work_dir}/{repo_name}"
             
             if not os.path.exists(target_repo_path):
-                os.system(f"cp -a {source_repo_path} {target_repo_path}")
+                # os.system(f"cp -a {source_repo_path} {target_repo_path}") # this is for linux. not compatible with windows.
+                shutil.copytree(source_repo_path, target_repo_path, dirs_exist_ok=True) # this is for windows.
         
         elif repo_type == 'github':
             # Clone GitHub repository
